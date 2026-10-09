@@ -109,7 +109,7 @@
 
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
 
         </div>
@@ -141,7 +141,7 @@
 
                     <div class="col-lg-12 col-9">
                         <center>
-                            <form action="/companyupdation1/">
+                            <form action="/companyupdation1/" method="POST">{% csrf_token %}
                                 <table style="color: black;">
                                     {% for  n in tk %}
                                         <tr><td><input type="hidden" name="id" value="{{n.cid}}"></td></tr>

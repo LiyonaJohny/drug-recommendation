@@ -234,7 +234,7 @@
             </div>
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
         </div>
     </nav>
@@ -281,7 +281,7 @@
                     {% endif %}
                 </div>
 
-                <form action="/chataction/" method="get" class="chat-input-row">
+                <form action="/chataction/" method="POST" class="chat-input-row">{% csrf_token %}
                     <input type="hidden" name="lid" value="{{ lid }}">
                     <textarea name="msg" placeholder="Type your message..." required></textarea>
                     <button type="submit" class="chat-send-btn"><i class="bi bi-arrow-right"></i></button>

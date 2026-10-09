@@ -264,7 +264,7 @@
             </div>
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
         </div>
     </nav>
@@ -342,7 +342,7 @@
 
                 <div class="med-detail-card review-form">
                     <h4 class="mb-3">Write a Review</h4>
-                    <form action="/review/" method="get">
+                    <form action="/review/" method="POST">{% csrf_token %}
                         <input type="hidden" name="mid" value="{{ mid }}">
                         <textarea name="review" placeholder="Share how this medicine worked for you..." required></textarea>
                         <button type="submit">Submit Review</button>

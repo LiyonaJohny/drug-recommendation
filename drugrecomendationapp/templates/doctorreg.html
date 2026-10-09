@@ -104,7 +104,7 @@
                         </div> -->
 
                         <div class="col-lg-9 col-9">
-                            <form class="custom-form contact-form row" action="/doctorregistration/" role="form">
+                            <form class="custom-form contact-form row" action="/doctorregistration/" method="POST" role="form">{% csrf_token %}
                         
                                 <div class="col-9">
                                     <label for="doctor-name" class="form-label">Name</label>

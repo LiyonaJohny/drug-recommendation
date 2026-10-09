@@ -1,0 +1,24 @@
+{
+  "dataset": "UCI Drug Review (drugs.com)",
+  "train_examples": 146941,
+  "test_examples_full": 48937,
+  "comparison_sample": 8000,
+  "label_scheme": "rating>=7 positive, <=4 negative, 5-6 dropped",
+  "model_full_test": {
+    "accuracy": 0.8985,
+    "f1": 0.9278,
+    "f1_macro": 0.8785
+  },
+  "comparison": {
+    "model": {
+      "accuracy": 0.9014,
+      "f1": 0.9295,
+      "f1_macro": 0.8827
+    },
+    "lexicon_baseline": {
+      "accuracy": 0.656,
+      "f1": 0.7374,
+      "f1_macro": 0.6194
+    }
+  }
+}

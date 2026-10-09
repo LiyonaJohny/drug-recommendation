@@ -101,7 +101,7 @@
                         </div> -->
 
                         <div class="col-lg-9 col-9">
-                            <form class="custom-form contact-form row" action="/companyregistration/" role="form">
+                            <form class="custom-form contact-form row" action="/companyregistration/" method="POST" role="form">{% csrf_token %}
                         
                                 <div class="col-9">
                                     <label for="company-name" class="form-label">Company Name</label>

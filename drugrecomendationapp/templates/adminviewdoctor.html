@@ -112,7 +112,7 @@
 
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
 
         </div>
@@ -165,7 +165,7 @@
                                     <td>{{u.email}}</td>
                                     {% if u.status != "true" %}
                                     <td><a href="/approvedoctor?id={{u.doc_id}}"><button>Approve</button></a>
-                                        <a href="/rejectdoctor?id={{u.doc_cid}}"><button>Reject</button></a></td> 
+                                        <a href="/rejectdoctor?id={{u.doc_id}}"><button>Reject</button></a></td> 
                                         {% endif %}
                                 </tr>
                                 <tr style="background-color: maroon;">

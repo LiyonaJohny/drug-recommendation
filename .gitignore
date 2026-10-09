@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Django
+*.log
+db.sqlite3
+/staticfiles/
+
+# User-uploaded media (keep the folder, ignore its contents)
+/media/media/
+
+# OS / editor junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Microsoft Office lock & autosave files
+~$*
+*\[Autosaved\]*
+
+# IDE
+.idea/
+.vscode/
+
+# Review service: local env, backfill checkpoint, and raw training data
+# (the trained model.joblib, metrics.json and lexicons under artifacts/ ARE committed)
+review_service/.env
+review_service/backfill_checkpoint.json
+*.tsv
+drugsCom_raw.zip

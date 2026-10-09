@@ -1,6 +1,10 @@
 from django.db import models
 
-# Create your models here.
+# NOTE: These tables are created and populated by drug_recomdendation.sql, not by
+# Django migrations. `managed = False` tells Django to leave the schema alone
+# (no makemigrations/migrate for them) while still allowing ORM reads and writes
+# such as mmodel().save() in the medicine-upload view.
+
 class mmodel(models.Model):
     name=models.CharField(max_length=100)
     used=models.CharField(max_length=100)
@@ -13,9 +17,9 @@ class mmodel(models.Model):
     image=models.FileField(upload_to="media")
 
     class Meta:
-        db_table="med_details"
+        db_table = "med_details"
+        managed = False
 
-from django.db import models
 
 class Feedback(models.Model):
     fid = models.AutoField(primary_key=True)
@@ -25,3 +29,4 @@ class Feedback(models.Model):
 
     class Meta:
         db_table = "feedback"
+        managed = False

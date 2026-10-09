@@ -4,17 +4,62 @@ from django.shortcuts import HttpResponseRedirect,redirect
 from django.db import connection
 from drugrecomendationapp.forms import mform
 from drugrecomendationapp.models import mmodel
-import nltk 
+import nltk
 from django.db import connection
-from nltk.corpus import stopwords 
-from nltk.tokenize import word_tokenize, sent_tokenize 
-stop_words = set(stopwords.words('english')) 
-txt = "Programers  is an program with programing languages. anila was good programmer " 
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+stop_words = set(stopwords.words('english'))
+txt = "Programers  is an program with programing languages. anila was good programmer "
 from nltk.stem import PorterStemmer
 import datetime
+from functools import wraps
+from django.contrib.auth.hashers import make_password, check_password
+from django.conf import settings
+import requests
 tdate=datetime.date.today()
 today=tdate.strftime("%Y-%m-%d")
 todaym=tdate.strftime("%m")
+
+# ---------------------------------------------------------------------------
+# Access control: every dashboard view should require a logged-in session of
+# the matching role. Call require_role() with no arguments to only require
+# that *some* valid session exists (any of the four roles).
+# ---------------------------------------------------------------------------
+def require_role(*roles):
+    def decorator(viewfunc):
+        @wraps(viewfunc)
+        def wrapper(request, *args, **kwargs):
+            utype = request.session.get('utype')
+            if not utype:
+                return redirect('/login/')
+            if roles and utype not in roles:
+                msg = "<script>alert('You are not authorized to view that page.');window.location='/index/';</script>"
+                return HttpResponse(msg)
+            return viewfunc(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def logout_view(request):
+    request.session.flush()
+    return redirect('/index/')
+
+
+# ---------------------------------------------------------------------------
+# Password hashing with a transparent upgrade path: rows created before this
+# change store the password in plain text. On a successful login with a
+# legacy plain-text row we re-hash it in place, so every account migrates to
+# a proper hash the first time its owner logs in, without ever locking
+# anyone out.
+# ---------------------------------------------------------------------------
+def _password_matches(cursor, lid, stored_pw, submitted_pw):
+    if stored_pw.startswith(('pbkdf2_', 'argon2', 'bcrypt', 'sha1$')):
+        return check_password(submitted_pw, stored_pw)
+    if stored_pw == submitted_pw:
+        cursor.execute("update login set upass=%s where lid=%s", [make_password(submitted_pw), lid])
+        return True
+    return False
+
 # Create your views here.
 def index(request):
     return render(request,"index.html")
@@ -29,46 +74,40 @@ def companyreg(request):
 
 def userregistration(request):
     cursor=connection.cursor()
-    na=request.GET['name']
-    ag=request.GET['age']
-    gen=request.GET['gender']
-    pl=request.GET['place']
-    ad=request.GET['address']
-    ph=request.GET['phone']
-    em=request.GET['email']
-    pw=request.GET['pwd']
+    na=request.POST['name']
+    ag=request.POST['age']
+    gen=request.POST['gender']
+    pl=request.POST['place']
+    ad=request.POST['address']
+    ph=request.POST['phone']
+    em=request.POST['email']
+    pw=request.POST['pwd']
+    hashed=make_password(pw)
 
-    sql="insert into user(uname,age,gender,place,address,phonenum,email,password) values('%s','%s','%s','%s','%s','%s','%s','%s')"%(na,ag,gen,pl,ad,ph,em,pw)
-    cursor.execute(sql)
-    ut='user'
-    sql2="select max(uid) as id from user"
-    cursor.execute(sql2)
-    result=cursor.fetchall()
-    for r in result:
-        sql3="insert into login(uid,uname,upass,utype) values ('%s','%s','%s','%s')"%(r[0],em,pw,ut)
-        cursor.execute(sql3)    
+    sql="insert into user(uname,age,gender,place,address,phonenum,email,password) values(%s,%s,%s,%s,%s,%s,%s,%s)"
+    cursor.execute(sql,[na,ag,gen,pl,ad,ph,em,hashed])
+    uid=cursor.lastrowid
+    sql3="insert into login(uid,uname,upass,utype,status) values (%s,%s,%s,%s,%s)"
+    cursor.execute(sql3,[uid,em,hashed,'user',''])
 
     msg="<script>alert('User Registered Successfully!');window.location='/index/';</script>"
     return HttpResponse(msg)
 
 def companyregistration(request):
     cursor=connection.cursor()
-    na=request.GET['name']
-    pl=request.GET['place']
-    ad=request.GET['address']
-    ph=request.GET['phone']
-    em=request.GET['email']
-    pw=request.GET['pwd']
+    na=request.POST['name']
+    pl=request.POST['place']
+    ad=request.POST['address']
+    ph=request.POST['phone']
+    em=request.POST['email']
+    pw=request.POST['pwd']
+    hashed=make_password(pw)
 
-    sql="insert into company(cname,place,address,phonenum,email,password) values('%s','%s','%s','%s','%s','%s')"%(na,pl,ad,ph,em,pw)
-    cursor.execute(sql)
-    ut='company'
-    sql2="select max(cid) as id from company"
-    cursor.execute(sql2)
-    result=cursor.fetchall()
-    for r in result:
-        sql3="insert into login(uid,uname,upass,utype,status) values ('%s','%s','%s','%s','false')"%(r[0],em,pw,ut)
-        cursor.execute(sql3)    
+    sql="insert into company(cname,place,address,phonenum,email,password) values(%s,%s,%s,%s,%s,%s)"
+    cursor.execute(sql,[na,pl,ad,ph,em,hashed])
+    cid=cursor.lastrowid
+    sql3="insert into login(uid,uname,upass,utype,status) values (%s,%s,%s,%s,%s)"
+    cursor.execute(sql3,[cid,em,hashed,'company','false'])
 
     msg="<script>alert('company Registered Successfully!');window.location='/index/';</script>"
     return HttpResponse(msg)
@@ -78,47 +117,62 @@ def login(request):
     return render(request,"login.html")
 def loginuser(request):
     cursor=connection.cursor()
-    p=request.GET['name']
-    q=request.GET['pwd']
-    sql="select * from login where uname='%s' and upass='%s'"%(p,q)
-    cursor.execute(sql)
+    p=request.POST['name']
+    q=request.POST['pwd']
+    sql="select * from login where uname=%s"
+    cursor.execute(sql,[p])
+    result=cursor.fetchall()
 
-    if(cursor.rowcount) > 0:
-        result=cursor.fetchall()
-        for row in result:
-            request.session['uid']=row[1]
-            request.session['uname']=row[2]
-            request.session['upass']=row[3]
-            request.session['utype']=row[4]
-            if(request.session['utype']=='company' and row[5]=='true'):
-                return render(request,'companyhome.html')
+    matched=None
+    for row in result:
+        if _password_matches(cursor, row[0], row[3], q):
+            matched=row
+            break
 
-        # else:
-        #     msg="<script>alert('Invalid Company');window.location='/login/';</script>"
-        # return HttpResponse(msg)
-        
-            elif(request.session['utype']=='user'):
-                return render(request,'userhome.html')
-
-            elif(request.session['utype']=='admin'):
-                return render(request,'adminhome.html')
-            
-            elif(request.session['utype']=='doctor'):
-                return render(request,'doctorhome.html')
-
-        
-        
-    else:
+    if not matched:
         msg="<script>alert('Invalid username and password');window.location='/login/';</script>"
+        return HttpResponse(msg)
+
+    row=matched
+    request.session['uid']=row[1]
+    request.session['uname']=row[2]
+    request.session['utype']=row[4]
+    status=row[5] if len(row) > 5 else ''
+
+    if(row[4]=='company'):
+        if(status=='true'):
+            return render(request,'companyhome.html')
+        request.session.flush()
+        msg="<script>alert('Your company account is still awaiting admin approval.');window.location='/login/';</script>"
+        return HttpResponse(msg)
+
+    elif(row[4]=='doctor'):
+        if(status=='true'):
+            return render(request,'doctorhome.html')
+        request.session.flush()
+        msg="<script>alert('Your doctor account is still awaiting admin approval.');window.location='/login/';</script>"
+        return HttpResponse(msg)
+
+    elif(row[4]=='user'):
+        return render(request,'userhome.html')
+
+    elif(row[4]=='admin'):
+        return render(request,'adminhome.html')
+
+    request.session.flush()
+    msg="<script>alert('Invalid username and password');window.location='/login/';</script>"
     return HttpResponse(msg)
         
+@require_role('company')
 def companyhome(request):
     return render(request,"companyhome.html")
+
+@require_role('company')
 def viewcompany(request):
     cursor=connection.cursor()
     uid=request.session['uid']
-    s="select * from company where cid='%s'"%(uid)
-    cursor.execute(s)
+    s="select * from company where cid=%s"
+    cursor.execute(s,[uid])
     rs=cursor.fetchall()
     use=[]
     for row in rs:
@@ -126,6 +180,7 @@ def viewcompany(request):
         use.append(q)
     return render(request,'viewcompany.html',{'use':use})
 
+@require_role('user')
 def userhome(request):
     return render(request,'userhome.html')
 def _stars(rate):
@@ -134,6 +189,7 @@ def _stars(rate):
     except (TypeError, ValueError):
         return 0
 
+@require_role()
 def vmedicine(request):
     cursor=connection.cursor()
 
@@ -156,6 +212,7 @@ def vmedicine(request):
         tk.append(q)
     return render(request,'vmedicine.html',{'tk':tk})
 
+@require_role()
 def meddetail(request):
     cursor=connection.cursor()
     mid=request.GET['mid']
@@ -186,11 +243,12 @@ def meddetail(request):
 
     return render(request,'meddetail.html',{'tk':tk,'rv':rv,'mid':mid})
 
+@require_role('company')
 def companyupdation(request):
     cursor=connection.cursor()
     cpid=request.session['uid']
-    s="select * from company where cid='%s'"%(cpid)
-    cursor.execute(s)
+    s="select * from company where cid=%s"
+    cursor.execute(s,[cpid])
     rs=cursor.fetchall()
     tk=[]
     for row in rs:
@@ -198,37 +256,36 @@ def companyupdation(request):
         tk.append(q)
     return render(request,'companyupdation.html',{'tk':tk})
 
+@require_role('company')
 def companyupdate(request):
     cursor=connection.cursor()
     cpid=request.session['uid']
-    s="select * from company where cid='%s'"%(cpid)
-    cursor.execute(s)
+    s="select * from company where cid=%s"
+    cursor.execute(s,[cpid])
     rs=cursor.fetchall()
     tk=[]
     for row in rs:
         q={'cid':row[0],'cname':row[1],'place':row[2],'address':row[3],'phonenum':row[4],'email':row[5]}
         tk.append(q)
     return render(request,'companyupdation.html',{'tk':tk})
-    
+
+@require_role('company')
 def companyupdation1(request):
     cursor=connection.cursor()
-    id=request.GET['id']
-    name=request.GET['name']
-    place=request.GET['place']
-    address=request.GET['address']
-    phoneno=request.GET['phone']
-    email=request.GET['email']
-    sql="update company set cname='%s',place='%s',address='%s',phonenum='%s',email='%s' where cid='%s'" %(name,place,address,phoneno,email,id)
-    cursor.execute(sql)
+    cpid=request.session['uid']
+    name=request.POST['name']
+    place=request.POST['place']
+    address=request.POST['address']
+    phoneno=request.POST['phone']
+    email=request.POST['email']
+    sql="update company set cname=%s,place=%s,address=%s,phonenum=%s,email=%s where cid=%s"
+    cursor.execute(sql,[name,place,address,phoneno,email,cpid])
     msg="<script>alert('Updated Successfully!');window.location='/companyhome/';</script>"
     return HttpResponse(msg)
 
-# def viewuser(request):
-#     return render(request, 'viewuser.html')
-
+@require_role('admin')
 def viewuser(request):
     cursor=connection.cursor()
-    # uid=request.session['uid']
     s="select * from user "
     cursor.execute(s)
     rs=cursor.fetchall()
@@ -236,14 +293,15 @@ def viewuser(request):
     for row in rs:
         q={'uid':row[0],'uname':row[1],'age':row[2],'gender':row[3],'place':row[4],'address':row[5],'phonenum':row[6],'email':row[7]}
         use.append(q)
-    
+
     return render(request,'viewuser.html',{'use':use})
 
+@require_role('user')
 def userupdate(request):
     cursor=connection.cursor()
     usid=request.session['uid']
-    s="select * from user where uid='%s'"%(usid)
-    cursor.execute(s)
+    s="select * from user where uid=%s"
+    cursor.execute(s,[usid])
     rs=cursor.fetchall()
     tk=[]
     for row in rs:
@@ -251,24 +309,27 @@ def userupdate(request):
         tk.append(q)
     return render(request,'updateuser.html',{'tk':tk})
 
+@require_role('user')
 def userupdation1(request):
     cursor=connection.cursor()
-    id=request.GET['id']
-    name=request.GET['name']
-    age=request.GET['age']
-    gender=request.GET['gender']
-    place=request.GET['place']
-    address=request.GET['address']
-    phoneno=request.GET['phone']
-    email=request.GET['email']
-    sql="update user set uname='%s',age='%s',gender='%s',place='%s',address='%s',phonenum='%s',email='%s' where uid='%s'" %(name,age,gender,place,address,phoneno,email,id)
-    cursor.execute(sql)
+    usid=request.session['uid']
+    name=request.POST['name']
+    age=request.POST['age']
+    gender=request.POST['gender']
+    place=request.POST['place']
+    address=request.POST['address']
+    phoneno=request.POST['phone']
+    email=request.POST['email']
+    sql="update user set uname=%s,age=%s,gender=%s,place=%s,address=%s,phonenum=%s,email=%s where uid=%s"
+    cursor.execute(sql,[name,age,gender,place,address,phoneno,email,usid])
     msg="<script>alert('Updated Successfully!');window.location='/userhome/';</script>"
     return HttpResponse(msg)
 
+@require_role('admin')
 def adminhome(request):
     return render(request,'adminhome.html')
 
+@require_role('admin')
 def adminviewcompany(request):
     cursor=connection.cursor()
     s="select * from company inner join login on login.uid=company.cid where login.utype='company'"
@@ -280,24 +341,27 @@ def adminviewcompany(request):
         use.append(q)
     return render(request,'adminviewcompany.html',{'use':use})
 
+@require_role('admin')
 def approvecompany(request):
     cursor=connection.cursor()
     cpid=request.GET['id']
-    s="update login set status='true' where uid='%s' and utype='company'"%(cpid)
-    cursor.execute(s)
+    s="update login set status='true' where uid=%s and utype='company'"
+    cursor.execute(s,[cpid])
 
-    msg="<script>alert('Approved Successfully!');window.location='/adminhome/';</script>"
+    msg="<script>alert('Approved Successfully!');window.location='/adminviewcompany/';</script>"
     return HttpResponse(msg)
 
+@require_role('admin')
 def rejectcompany(request):
     cursor=connection.cursor()
     cpid=request.GET['id']
-    s="update login set status='false' where uid='%s' utype='company'"%(cpid)
-    cursor.execute(s)
+    s="update login set status='false' where uid=%s and utype='company'"
+    cursor.execute(s,[cpid])
 
-    msg="<script>alert('Approved Successfully!');window.location='/adminhome/';</script>"
+    msg="<script>alert('Company rejected.');window.location='/adminviewcompany/';</script>"
     return HttpResponse(msg)
 
+@require_role('company')
 def addmedicine(request):
     return render(request,"addmedicine.html")
 
@@ -319,6 +383,7 @@ def addmedicine(request):
 #     msg="<script>alert('Details added Successfully!');window.location='/companyhome/';</script>"
 #     return HttpResponse(msg)
 
+@require_role('company')
 def viewmedicine(request):
     cursor=connection.cursor()
     s="select * from med_details"
@@ -328,9 +393,10 @@ def viewmedicine(request):
     for row in rs:
         q={'med_id':row[0],'name':row[1],'used':row[2],'mg':row[3],'dosage':row[4],'cmp':row[5],'effects':row[6],'pres':row[7],'pack':row[8],'image':row[9]}
         use.append(q)
-    
+
     return render(request,"viewmedicine.html",{'use':use})
 
+@require_role('company')
 def med(request):
     if request.method=="POST":
         medforms=mform(request.POST,request.FILES)
@@ -347,26 +413,21 @@ def med(request):
             meds.image=medforms.cleaned_data["image"]
 
             meds.save()
-            m='medicine'
             msg="<script>alert('successfully added');window.location='/addmedicine/';</script>"
-            saved=True
             return HttpResponse(msg)
-    
+
         else:
-            medforms=mform()
-            # msg="<script>alert('Details added Successfully!');window.location='/addmedicine/';</script>"
-        return HttpResponse(msg)
-    
+            msg="<script>alert('Please fill in every field correctly.');window.location='/addmedicine/';</script>"
+            return HttpResponse(msg)
 
-# def medupdate(request):
-#     mid=request.GET['id']
-#     return render(request,"medupdate.html" ,{"mid":mid} )
+    return redirect('/addmedicine/')
 
+@require_role('company')
 def medicineupdate(request):
     cursor=connection.cursor()
     mid=request.GET['id']
-    s="select * from med_details where med_id='%s'"%(mid)
-    cursor.execute(s)
+    s="select * from med_details where med_id=%s"
+    cursor.execute(s,[mid])
     rs=cursor.fetchall()
     tk=[]
     for row in rs:
@@ -374,19 +435,20 @@ def medicineupdate(request):
         tk.append(q)
     return render(request,'medicineupdate.html',{'tk':tk})
 
+@require_role('company')
 def medupdation(request):
     cursor=connection.cursor()
-    mid=request.GET['id']
-    name=request.GET['mname']
-    used=request.GET['used']
-    mg=request.GET['mg']
-    dosage=request.GET['dosage']
-    cmp=request.GET['cmp']
-    effects=request.GET['effects']
-    pres=request.GET['pres']
-    pack=request.GET['pack']
-    sql1="update med_details set name='%s',used='%s',mg='%s',dosage='%s',cmp='%s',effects='%s',pres='%s',pack='%s' where med_id='%s'" %(name,used,mg,dosage,cmp,effects,pres,pack,mid)
-    cursor.execute(sql1)
+    mid=request.POST['id']
+    name=request.POST['mname']
+    used=request.POST['used']
+    mg=request.POST['mg']
+    dosage=request.POST['dosage']
+    cmp=request.POST['cmp']
+    effects=request.POST['effects']
+    pres=request.POST['pres']
+    pack=request.POST['pack']
+    sql1="update med_details set name=%s,used=%s,mg=%s,dosage=%s,cmp=%s,effects=%s,pres=%s,pack=%s where med_id=%s"
+    cursor.execute(sql1,[name,used,mg,dosage,cmp,effects,pres,pack,mid])
     msg="<script>alert('Updated Successfully!');window.location='/viewmedicine/';</script>"
     return HttpResponse(msg)
 
@@ -401,6 +463,7 @@ def medupdation(request):
 #         q={'med_id':row[0],'name':row[1],'used':row[2],'mg':row[3],'dosage':row[4],'cmp':row[5],'effects':row[6],'pres':row[7],'pack':row[8]}
 #         tk.append(q)
 #     return render(request,'userhome.html',{'tk':tk})
+@require_role()
 def smedicine(request):
     cursor = connection.cursor()
     med = request.GET['med']
@@ -452,113 +515,94 @@ def smedicine(request):
 
 
 
-def addreview(request):
-    return render(request,"addreview.html")
+def _score_with_service(drug_id, text, user_id):
+    """Ask the review microservice to score (and store) the review.
+    Returns the 1-5 rating, or None if the service is unreachable or errors."""
+    try:
+        resp = requests.post(
+            settings.REVIEW_SERVICE_URL.rstrip('/') + '/reviews',
+            json={'drug_id': int(drug_id), 'review': text, 'user_id': user_id},
+            timeout=settings.REVIEW_SERVICE_TIMEOUT,
+        )
+        if resp.status_code == 201:
+            return int(resp.json()['rating'])
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+    return None
 
-def review(request):
-    cursor = connection.cursor()
-    uid = request.session["uid"]
-    na = request.GET['mid']
-    re = request.GET['review']
 
-    ##############################################
-    sql2 = "truncate table postag"
-    cursor.execute(sql2)
-    ################post tag & stop words  ######################
-    txt = request.GET["review"]
-    tokenized = sent_tokenize(txt)
-    for i in tokenized:
-        wordsList1 = nltk.word_tokenize(i)
-        wordsList = [w for w in wordsList1 if not w in stop_words]
-        tagged1 = nltk.pos_tag(wordsList)
-        tagged = [(word, tag) for word, tag in tagged1 if (
-            tag == 'NN' or tag == 'NNS' or tag == 'NNP' or tag == 'NNPS' or tag == 'JJ' or tag == 'JJR' or tag == 'JJS' or tag == 'VB' or tag == 'VBD' or tag == 'VBG' or tag == 'VBN' or tag == 'VBP' or tag == 'VBZ')]
-        for f, g in tagged1:
-            sql = "insert into postag(data) values(%s)"
-            cursor.execute(sql, [f])
-    you = []
-    sql3 = "select * from postag"
-    cursor.execute(sql3)
-    result1 = cursor.fetchall()
-    for row1 in result1:
-        d = row1[1]
-        you.append(d)
-    sentence = ' '.join(you)
+def _score_with_nltk(cursor, text):
+    """Fallback scorer: the original inline NLTK opinion-lexicon pipeline.
+    Returns a 1-5 rating. Used when the microservice is unavailable."""
+    cursor.execute("truncate table postag")
+    for sentence in sent_tokenize(text):
+        tokens = [w for w in nltk.word_tokenize(sentence) if w not in stop_words]
+        tagged = [(w, t) for w, t in nltk.pos_tag(tokens) if t in (
+            'NN', 'NNS', 'NNP', 'NNPS', 'JJ', 'JJR', 'JJS',
+            'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ')]
+        for word, _tag in tagged:
+            cursor.execute("insert into postag(data) values(%s)", [word])
 
-    #######stemming####
+    cursor.execute("select * from postag")
+    sentence = ' '.join(r[1] for r in cursor.fetchall())
+
     ps = PorterStemmer()
-    words = word_tokenize(sentence)
-    sql2 = "truncate table stemming"
-    cursor.execute(sql2)
-    for w in words:
-        sql = "insert into stemming(data) values(%s)"
-        cursor.execute(sql, [ps.stem(w)])
+    cursor.execute("truncate table stemming")
+    for w in word_tokenize(sentence):
+        cursor.execute("insert into stemming(data) values(%s)", [ps.stem(w)])
 
-    #############posword
-    sql2 = "truncate table pword"
-    cursor.execute(sql2)
-    sql3 = "select * from stemming"
-    cursor.execute(sql3)
-    result = cursor.fetchall()
-    for row in result:
-        sql3 = "select * from positive"
-        cursor.execute(sql3)
-        result1 = cursor.fetchall()
-        for row1 in result1:
-            if(row[1] in row1[1]):
-                sql = "insert into pword(pword) values(%s)"
-                cursor.execute(sql, [row[1]])
+    cursor.execute("truncate table pword")
+    cursor.execute("select * from stemming")
+    for row in cursor.fetchall():
+        cursor.execute("select * from positive")
+        for row1 in cursor.fetchall():
+            if row[1] == row1[1]:
+                cursor.execute("insert into pword(pword) values(%s)", [row[1]])
 
-    ############negword
+    cursor.execute("truncate table nword")
+    cursor.execute("select * from stemming")
+    for row in cursor.fetchall():
+        cursor.execute("select * from negative")
+        for row1 in cursor.fetchall():
+            if row[1] == row1[1]:
+                cursor.execute("insert into nword(nword) values(%s)", [row[1]])
 
-    sql2 = "truncate table nword"
-    cursor.execute(sql2)
-    sql3 = "select * from stemming"
-    cursor.execute(sql3)
-    result = cursor.fetchall()
-    for row in result:
-        sql3 = "select * from negative"
-        cursor.execute(sql3)
-        result1 = cursor.fetchall()
-        for row1 in result1:
-            if(row[1] == row1[1]):
-                sql = "insert into nword(nword) values(%s)"
-                cursor.execute(sql, [row[1]])
-
-    ##################score & result
-
-    sqlp = "select count(*) from pword "
-    cursor.execute(sqlp)
-    p1 = cursor.fetchall()
-    for r in p1:
-        pcount = r[0]
-    sqlp = "select count(*) from nword "
-    cursor.execute(sqlp)
-    n1 = cursor.fetchall()
-    for r in n1:
-        ncount = r[0]
+    cursor.execute("select count(*) from pword")
+    pcount = cursor.fetchone()[0]
+    cursor.execute("select count(*) from nword")
+    ncount = cursor.fetchone()[0]
 
     total = float(pcount) + float(ncount)
     if total == 0:
-        # no sentiment-bearing words matched at all -> neutral, avoid a divide-by-zero
-        sentilabel = 3
-    else:
-        sentiscore = (float(pcount) - float(ncount)) / total
-        avgcount = sentiscore / total
-        if (avgcount > 0.25):
-            sentilabel = 5
-        elif (avgcount < 0.25 and avgcount > 0.00):
-            sentilabel = 4
-        elif (avgcount == -0.25):
-            sentilabel = 2
-        elif (avgcount < 0.25):
-            sentilabel = 1
-        else:
-            sentilabel = 3
+        return 3
+    avgcount = ((float(pcount) - float(ncount)) / total) / total
+    if avgcount > 0.25:
+        return 5
+    elif 0.0 < avgcount < 0.25:
+        return 4
+    elif avgcount == -0.25:
+        return 2
+    elif avgcount < 0.25:
+        return 1
+    return 3
+
+
+@require_role()
+def review(request):
+    cursor = connection.cursor()
+    uid = request.session["uid"]
+    na = request.POST['mid']
+    re = request.POST['review']
+
+    # Primary path: the scoring microservice (TF-IDF + Logistic Regression),
+    # which also stores the review in MongoDB. Fall back to the inline NLTK
+    # scorer when the service is down so reviews are never lost.
+    rating = _score_with_service(na, re, uid)
+    if rating is None:
+        rating = _score_with_nltk(cursor, re)
 
     sql = "insert into review(uid,med_id,date,review,rating) values(%s,%s,%s,%s,%s)"
-    cursor.execute(sql, [uid, na, today, re, sentilabel])
-    ###############################################
+    cursor.execute(sql, [uid, na, today, re, rating])
 
     msg = "<script>alert('Review Added');window.location='/meddetail/?mid="+str(na)+"';</script>"
     return HttpResponse(msg)
@@ -572,25 +616,23 @@ def doctorreg(request):
 
 def doctorregistration(request):
     cursor=connection.cursor()
-    na=request.GET['name']
-    spl=request.GET['Specilization']
-    nm=request.GET['number']
-    ql=request.GET['qualification']
-    em=request.GET['email']
-    pw=request.GET['password']
+    na=request.POST['name']
+    spl=request.POST['Specilization']
+    nm=request.POST['number']
+    ql=request.POST['qualification']
+    em=request.POST['email']
+    pw=request.POST['password']
+    hashed=make_password(pw)
 
-    sql="insert into doctor(name,specilization,license,qualification,email,password) values('%s','%s','%s','%s','%s','%s')"%(na,spl,nm,ql,em,pw)
-    cursor.execute(sql)
-    ut='doctor'
-    sql2="select max(doc_id) as id from doctor"
-    cursor.execute(sql2)
-    result=cursor.fetchall()
-    for r in result:
-        sql3="insert into login(uid,uname,upass,utype,status) values ('%s','%s','%s','%s','false')"%(r[0],em,pw,ut)
-        cursor.execute(sql3)
+    sql="insert into doctor(name,specilization,license,qualification,email,password) values(%s,%s,%s,%s,%s,%s)"
+    cursor.execute(sql,[na,spl,nm,ql,em,hashed])
+    doc_id=cursor.lastrowid
+    sql3="insert into login(uid,uname,upass,utype,status) values (%s,%s,%s,%s,%s)"
+    cursor.execute(sql3,[doc_id,em,hashed,'doctor','false'])
     msg="<script>alert('Doctor Registered Successfully!');window.location='/index/';</script>"
-    return HttpResponse(msg) 
+    return HttpResponse(msg)
 
+@require_role('admin')
 def adminviewdoctor(request):
     cursor=connection.cursor()
     s="select * from doctor inner join login on login.uid=doctor.doc_id where login.utype='doctor'"
@@ -602,32 +644,36 @@ def adminviewdoctor(request):
         use.append(q)
     return render(request,'adminviewdoctor.html',{'use':use})
 
+@require_role('admin')
 def approvedoctor(request):
     cursor=connection.cursor()
     doc_id=request.GET['id']
-    s="update login set status='true' where uid='%s' and utype='doctor'"%(doc_id)
-    cursor.execute(s)
+    s="update login set status='true' where uid=%s and utype='doctor'"
+    cursor.execute(s,[doc_id])
 
-    msg="<script>alert('Approved Successfully!');window.location='/adminhome/';</script>"
+    msg="<script>alert('Approved Successfully!');window.location='/adminviewdoctor/';</script>"
     return HttpResponse(msg)
 
+@require_role('admin')
 def rejectdoctor(request):
     cursor=connection.cursor()
     doc_id=request.GET['id']
-    s="update login set status='false' where uid='%s' utype='company'"%(doc_id)
-    cursor.execute(s)
+    s="update login set status='false' where uid=%s and utype='doctor'"
+    cursor.execute(s,[doc_id])
 
-    msg="<script>alert('Rejected!');window.location='/adminhome/';</script>"
+    msg="<script>alert('Doctor rejected.');window.location='/adminviewdoctor/';</script>"
     return HttpResponse(msg)
 
+@require_role('doctor')
 def doctorhome(request):
     return render(request,"doctorhome.html")
 
+@require_role('doctor')
 def viewdoctor(request):
     cursor=connection.cursor()
     doc_id=request.session['uid']
-    s="select * from doctor where doc_id='%s'"%(doc_id)
-    cursor.execute(s)
+    s="select * from doctor where doc_id=%s"
+    cursor.execute(s,[doc_id])
     rs=cursor.fetchall()
     use=[]
     for row in rs:
@@ -635,11 +681,12 @@ def viewdoctor(request):
         use.append(q)
     return render(request,'viewdoctor.html',{'use':use})
 
+@require_role('doctor')
 def doctorupdation(request):
     cursor=connection.cursor()
     doc_id=request.session['uid']
-    s="select * from doctor where doc_id='%s'"%(doc_id)
-    cursor.execute(s)
+    s="select * from doctor where doc_id=%s"
+    cursor.execute(s,[doc_id])
     rs=cursor.fetchall()
     use=[]
     for row in rs:
@@ -647,19 +694,21 @@ def doctorupdation(request):
         use.append(q)
     return render(request,'doctorupdation.html',{'use':use})
 
+@require_role('doctor')
 def doctorupdate(request):
     cursor=connection.cursor()
-    id=request.GET['id']
-    na=request.GET['name']
-    spl=request.GET['specilization']
-    nm=request.GET['number']
-    ql=request.GET['qualification']
-    em=request.GET['email']
-    sql="update doctor set name='%s',specilization='%s',license='%s',qualification='%s',email='%s' where doc_id='%s'" %(na,spl,nm,ql,em,id)
-    cursor.execute(sql)
+    doc_id=request.session['uid']
+    na=request.POST['name']
+    spl=request.POST['specilization']
+    nm=request.POST['number']
+    ql=request.POST['qualification']
+    em=request.POST['email']
+    sql="update doctor set name=%s,specilization=%s,license=%s,qualification=%s,email=%s where doc_id=%s"
+    cursor.execute(sql,[na,spl,nm,ql,em,doc_id])
     msg="<script>alert('Updated Successfully!');window.location='/viewdoctor/';</script>"
     return HttpResponse(msg)
 
+@require_role()
 def doctorlist(request):
     cursor=connection.cursor()
     s="select * from doctor"
@@ -672,6 +721,7 @@ def doctorlist(request):
     return render(request,'doctorlist.html',{'use':use})
 
 
+@require_role('user')
 def chat(request):
     cursor=connection.cursor()
     lid=request.GET['lid']
@@ -693,11 +743,12 @@ def chat(request):
         docname=rd[0]
     return render(request,'chat.html',{'lid':lid,'uid':uid,'alist':alist,'docname':docname})
 
+@require_role('user')
 def chataction(request):
     cursor=connection.cursor()
     uid=request.session['uid']
-    lid=request.GET['lid']
-    msg=request.GET['msg']
+    lid=request.POST['lid']
+    msg=request.POST['msg']
     ss="select chatid from chatm where uid=%s and lid=%s and chatdate=%s"
     cursor.execute(ss,[uid,lid,today])
     row=cursor.fetchone()
@@ -712,13 +763,12 @@ def chataction(request):
     msg="<script>;window.location='/chat?lid="+lid+"';</script>"
     return HttpResponse(msg)
 
+@require_role('doctor')
 def userlist(request):
     cursor=connection.cursor()
     lid=request.session['uid']
-    # uid=request.GET['lid']
-    s="SELECT * FROM user where uid in(select uid from chatm where lid= '%s')"%(lid)
-    print(s)
-    cursor.execute(s)
+    s="SELECT * FROM user where uid in(select uid from chatm where lid=%s)"
+    cursor.execute(s,[lid])
     rs=cursor.fetchall()
     use=[]
     for row in rs:
@@ -726,6 +776,7 @@ def userlist(request):
         use.append(q)
     return render(request,'userlist.html',{'use':use})
 
+@require_role('doctor')
 def dchat(request):
     cursor=connection.cursor()
     lid=request.session['uid']
@@ -747,11 +798,12 @@ def dchat(request):
         patname=rp[0]
     return render(request,'dchat.html',{'uid':uid,'lid':lid,'alist':alist,'patname':patname})
 
+@require_role('doctor')
 def dchataction(request):
     cursor=connection.cursor()
     lid=request.session['uid']
-    uid=request.GET['uid']
-    msg=request.GET['msg']
+    uid=request.POST['uid']
+    msg=request.POST['msg']
     ss="select chatid from chatm where uid=%s and lid=%s and chatdate=%s"
     cursor.execute(ss,[uid,lid,today])
     row=cursor.fetchone()
@@ -769,27 +821,29 @@ def dchataction(request):
 
 from datetime import date   # ✅ Add this import
 
+@require_role('user')
 def givefeedback(request):
     if request.method == "POST":
         cursor = connection.cursor()
         uid = request.session['uid']  # logged-in user id
         feedback = request.POST['feedback']
-        today = date.today()   # now works ✅
+        fdate = date.today()
 
-        sql = "INSERT INTO feedback(uid, feedback, fdate) VALUES ('%s','%s','%s')" % (uid, feedback, today)
-        cursor.execute(sql)
+        sql = "INSERT INTO feedback(uid, feedback, fdate) VALUES (%s,%s,%s)"
+        cursor.execute(sql, [uid, feedback, fdate])
         return HttpResponse("<script>alert('Feedback submitted successfully');window.location='/viewfeedback/';</script>")
-    
+
     return render(request, "givefeedback.html")
 
 
 
 # View all feedbacks (of that user or all users)
+@require_role('user')
 def viewfeedback(request):
     cursor = connection.cursor()
     uid = request.session['uid']
-    sql = "SELECT fid, feedback, fdate FROM feedback WHERE uid='%s'" % (uid)
-    cursor.execute(sql)
+    sql = "SELECT fid, feedback, fdate FROM feedback WHERE uid=%s"
+    cursor.execute(sql, [uid])
     rs = cursor.fetchall()
     fb = []
     for row in rs:
@@ -798,6 +852,7 @@ def viewfeedback(request):
     return render(request, "viewfeedback.html", {"fb": fb})
 
 
+@require_role('admin')
 def admin_viewfeedback(request):
     cursor = connection.cursor()
     sql = """

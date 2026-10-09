@@ -112,7 +112,7 @@
 
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
 
         </div>
@@ -146,7 +146,7 @@
                         <center>
                                 
                             <div class="col-lg-9 col-9">
-                                <form class="custom-form contact-form row" action="/userupdation1/" role="form">
+                                <form class="custom-form contact-form row" action="/userupdation1/" method="POST" role="form">{% csrf_token %}
                                     {% for n in tk %}
                                     <input type="hidden" name="id" value="{{ n.uid }}">
                             

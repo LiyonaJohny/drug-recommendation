@@ -622,14 +622,14 @@ strong {
 }
 
 .custom-form button[type="submit"] {
-  background: var(--accent-blue);
+  background: var(--dark-color);
   border: 0;
   color: var(--white-color);
   text-transform: uppercase;
 }
 
 .custom-form button[type="submit"]:hover {
-  background: var(--accent-blue-dark);
+  background: var(--news-title-color);
 }
 
 

@@ -106,7 +106,7 @@
 
 
             <div class="d-none d-lg-block">
-                <a href="/index/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
+                <a href="/logout/" class="custom-btn btn btn-danger" style="color: white;">Logout</a>
             </div>
 
         </div>
@@ -143,7 +143,7 @@
                                     <div class="col-lg-8 col-md-10">
                                         <div class="card shadow-lg p-4">
                                             <h2 class="text-center mb-4">Update Doctor Details</h2>
-                                            <form action="/doctorupdate/" method="GET">
+                                            <form action="/doctorupdate/" method="POST">{% csrf_token %}
                                                 {% for u in use %}
                                                 <input type="hidden" name="id" value="{{ u.doc_id }}">
                                                 <div class="mb-3">

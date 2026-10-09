@@ -84,6 +84,12 @@ DATABASES = {
         'PASSWORD':'',
         'HOST':'127.0.0.1',
         'PORT':'3306',
+        # Strict mode escalates silent data truncation (e.g. an oversized
+        # value being cut to fit a column) into an error instead of quietly
+        # corrupting data. This is what previously truncated password hashes.
+        'OPTIONS': {
+            'sql_mode': 'STRICT_TRANS_TABLES',
+        },
     }
 }
 
@@ -144,3 +150,8 @@ STATIC_URL='static/'
 # https://docs.djangoproject.com/en/4.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Review scoring microservice (Flask). The review view posts new reviews here
+# for scoring/storage and falls back to the inline NLTK scorer if it is down.
+REVIEW_SERVICE_URL = os.environ.get('REVIEW_SERVICE_URL', 'http://127.0.0.1:5005')
+REVIEW_SERVICE_TIMEOUT = float(os.environ.get('REVIEW_SERVICE_TIMEOUT', '3'))
