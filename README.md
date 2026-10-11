@@ -1,5 +1,7 @@
 # Drug Recommendation System
 
+*Originally built for my MCA (2022–2023); moved to GitHub and extended in 2026.*
+
 A machine-learning-based, symptom-aware medicine recommendation web application
 built with **Django 4.0**, **MySQL**, **MongoDB**, and a **scikit-learn /
 Flask** review-scoring service. Patients search for medicines and read

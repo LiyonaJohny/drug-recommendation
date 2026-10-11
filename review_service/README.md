@@ -1,5 +1,7 @@
 # Review Scoring Service
 
+*Originally built for my MCA (2022–2023); moved to GitHub and extended in 2026.*
+
 A Flask microservice that scores free-text drug reviews with a machine-learning
 classifier, stores them in MongoDB, and serves per-drug average ratings. It
 replaces the inline NLTK opinion-lexicon scorer that the Django Drug
