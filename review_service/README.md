@@ -1,6 +1,6 @@
 # Review Scoring Service
 
-*Originally built for my MCA (2022–2023); moved to GitHub and extended in 2026.*
+*Added in 2026 to extend the Drug Recommendation System (originally my MCA project, 2022–2023).*
 
 A Flask microservice that scores free-text drug reviews with a machine-learning
 classifier, stores them in MongoDB, and serves per-drug average ratings. It
