@@ -145,6 +145,34 @@ backfill instructions.
 
 ---
 
+## Why two databases?
+
+The project uses two different databases, each for a different job:
+
+- **MySQL** (`drug_recomdendation`) is the main application database. It holds
+  everything the Django website runs on: users, logins, companies, doctors,
+  medicines, reviews, chat messages and feedback. This is the database the app
+  has always used, and it is what powers the pages and the medicine star
+  ratings.
+- **MongoDB** (`drug_reviews`) is used only by the review-scoring microservice.
+  It stores each scored review as a document and serves per-drug average ratings
+  through an aggregation pipeline. It was introduced with the microservice to
+  keep the review-analytics workload separate from the transactional app data,
+  and because a document store fits free-text reviews naturally.
+
+They are complementary, not a replacement for one another. When a review is
+submitted, the service writes it to MongoDB while Django still records it in
+MySQL (so the existing medicine ranking, which reads MySQL, keeps working). The
+`review_service/backfill.py` script performs a one-time copy of the existing
+MySQL reviews into MongoDB so the document store starts with the full history.
+
+MySQL is required to run the website. MongoDB is only needed when you run the
+review microservice (for example via `docker compose up` in `review_service/`,
+which starts a MongoDB container); the Django site runs without it, and the
+review view falls back to the inline NLTK scorer when the service is not up.
+
+---
+
 ## Notes
 
 - `DEBUG = True` and the committed `SECRET_KEY` are for **local development
